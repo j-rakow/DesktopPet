@@ -1,6 +1,9 @@
 import asyncio
 import websockets
 import os
+import http.server
+import socketserver
+import threading
 
 connected = set()
 
@@ -17,10 +20,29 @@ async def handler(websocket):
     finally:
         connected.remove(websocket)
 
+# Responds to HTTP HEAD requests so Render thinks we're healthy
+def run_http_health_check(port):
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, format, *args):  # Silence logging
+            return
+
+    # Use a different port for the health check
+    with socketserver.TCPServer(("", port), Handler) as httpd:
+        print(f"Health check HTTP server on port {port}")
+        httpd.serve_forever()
+
 async def main():
-    port = int(os.environ.get("PORT", 10000))  # use Render's assigned port
-    print(f"WebSocket server running on port {port}...")
-    async with websockets.serve(handler, "", port):
+    ws_port = int(os.environ.get("PORT", 8765))
+    print(f"WebSocket server running on port {ws_port}...")
+
+    # Start HTTP health check server on an unused port
+    threading.Thread(target=run_http_health_check, args=(ws_port + 1,), daemon=True).start()
+
+    async with websockets.serve(handler, "", ws_port):
         await asyncio.Future()
 
 asyncio.run(main())
