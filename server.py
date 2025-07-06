@@ -3,6 +3,7 @@ import websockets
 import http.server
 import socketserver
 import threading
+import os
 
 connected = set()
 
@@ -19,21 +20,25 @@ async def handler(websocket):
     finally:
         connected.remove(websocket)
 
-async def main():
-    print("Starting WebSocket server on port 10000...")
-    async with websockets.serve(handler, "", 10000):
-        await asyncio.Future()  # run forever
-
-# --- HTTP server for Render ping checks ---
+# This HTTP server handles Render's pings (HEAD/GET requests)
 def run_http_server():
-    PORT = 80
-    Handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"Serving HTTP on port {PORT}")
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+
+    with socketserver.TCPServer(("", 10000), Handler) as httpd:
+        print("Health check server running on port 10000")
         httpd.serve_forever()
 
-# Start HTTP server in a background thread
+# Start HTTP in background thread
 threading.Thread(target=run_http_server, daemon=True).start()
 
-# Start WebSocket server in main thread
+# Start WebSocket
+async def main():
+    port = int(os.environ.get("PORT", 8765))
+    print(f"WebSocket server on port {port}")
+    async with websockets.serve(handler, "", port):
+        await asyncio.Future()
+
 asyncio.run(main())
